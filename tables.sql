@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS `PlatformOrder` (
 );
 
 CREATE TABLE IF NOT EXISTS `PlatformOrderItem` (
-    `id` VARCHAR(255),
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `platformItemid` VARCHAR(255),
     `itemId` VARCHAR(255),
     `discount` DECIMAL(10,2),
     `discountType` INT,
@@ -40,9 +41,9 @@ CREATE TABLE IF NOT EXISTS `PlatformOrderItem` (
 );
 
 CREATE TABLE IF NOT EXISTS `PlatformComplement` (
-    `id` VARCHAR(255),
+    `id` INT NOT NULL AUTO_INCREMENT,
     `complementId` VARCHAR(255),
-    `platformOrderItemId` VARCHAR(255),
+    `platformOrderItemId` INT,
     `complementName` VARCHAR(255),
     `comment` TEXT,
     `quantity` INT,

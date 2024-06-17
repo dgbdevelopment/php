@@ -94,7 +94,7 @@ function buildPlatformOrderItem($order){
   global $conn;
   $itemForStorage = new stdClass();
   foreach ($order->carts[0]->items as $item) {
-    $itemForStorage->id = $item->cart_item_id;
+    $itemForStorage->platformItemId = $item->cart_item_id;
     $itemForStorage->itemId = $item->id;
     $itemForStorage->orderId = $order->id;
     $itemForStorage->itemName = $item->title;
@@ -103,7 +103,7 @@ function buildPlatformOrderItem($order){
     $itemForStorage->date = strtotime($order->created_time) * 1000;
 
     foreach($order->payment->payment_detail->item_charges->price_breakdown as $price){
-      if($price->cart_item_id == $itemForStorage->id){
+      if($price->cart_item_id == $itemForStorage->platformItemId){
         $itemForStorage->price = $price->unit->gross->amount_e5 / 100000;
       }
     }
@@ -118,7 +118,7 @@ function buildPlatformOrderItem($order){
 
     // Preparar la consulta SQL
     $sql = "INSERT INTO PlatformOrderItem (
-      id, itemId, orderId, itemName, comment, quantity, price, total, date, vat
+      platformItemId, itemId, orderId, itemName, comment, quantity, price, total, date, vat
       ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )";
@@ -129,7 +129,7 @@ function buildPlatformOrderItem($order){
     // Vincular los parámetros
     $stmt->bind_param(
     'sssssiidii',
-    $itemForStorage->id,
+    $itemForStorage->platformItemId,
     $itemForStorage->itemId,
     $itemForStorage->orderId,
     $itemForStorage->itemName,

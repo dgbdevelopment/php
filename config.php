@@ -35,7 +35,10 @@
   }
 
   $statusList = [
-    "OFFERED" => 1
+    "OFFERED" => 1,
+    "EXPIRED" => 2,
+    "ACCEPTED" => 3,
+    "DENNIED" => 4
   ];
 
   $typeOrderList = [
