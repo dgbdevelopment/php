@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS `Config` (
     `shopId` VARCHAR(255) UNIQUE,
     `uberStoreId` VARCHAR(255),
     `globoStoreId` VARCHAR(255),
-    `jusEatStoreId` VARCHAR(255),
+    `justEatStoreId` VARCHAR(255),
     `authToken` VARCHAR(255),
     PRIMARY KEY(`id`)
 );

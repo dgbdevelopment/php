@@ -1,1 +1,0 @@
-route: /integraciones/api/orders/acceptOrder/793eb45e-c74f-431d-9863-6c64d07c3ee4, relative_path: "/api/orders/acceptOrder/793eb45e-c74f-431d-9863-6c64d07c3ee4"

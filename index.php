@@ -3,15 +3,17 @@
 //Ruta original: https://betadelivery.turbopos.es/api/uber_eats
 
 require_once "./config.php";
-require_once "./uberController.php";
+require_once "./UberEatsController.php";
+
+$uberEatsController = new UberEatsController($client_id, $client_secret, $conn, $statusList, $typeOrderList);
 
 /********* Daber que llega en el body de la petición a Uber Eats ************/
 $log  = file_get_contents( 'php://input' );
-file_put_contents('./body_log_'.date("j.n.Y-h.m.s").'.json', $log);
+// file_put_contents('./body_log_'.date("j.n.Y-h.m.s").'.json', $log);
 /****************************************************************************/
 
 $server = json_encode($_SERVER);
-file_put_contents('./server_log_'.date("j.n.Y").'.json', $server);
+// file_put_contents('./server_log_'.date("j.n.Y").'.json', $server);
 
 $request_method = $_SERVER['REQUEST_METHOD'];
 $route = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -28,15 +30,11 @@ if (substr($route, 0, strlen($base_path)) == $base_path) {
     $relative_path = $route;
 }
 
-
-file_put_contents('test.txt', 'route: ' . $route . ', relative_path: "' . $relative_path . '"');
-
 if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
-  file_put_contents('test.txt', PHP_EOL . 'Entra en el IF', FILE_APPEND);
   $uberSignHeader = $_SERVER['HTTP_X_UBER_SIGNATURE'];
   if ($uberSignHeader == generarHMAC(file_get_contents('php://input'), $uberSignKey)){
     http_response_code(200);
-    receiveRequest(file_get_contents('php://input'));
+    $uberEatsController->receiveRequest(file_get_contents('php://input'));
   } else{
     http_response_code(401);
   }
@@ -53,6 +51,20 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
   $pathParts = explode('/', trim($relative_path, '/'));
   $orderId = end($pathParts);
   $response = acceptOrder($orderId);
+  echo $response['data'];
+  http_response_code($response['status']);
+
+} else if ($request_method === 'POST' && strstr($relative_path,  '/api/orders/denyOrder')) {
+  $pathParts = explode('/', trim($relative_path, '/'));
+  $orderId = end($pathParts);
+  $response = denyOrder($orderId);
+  echo $response['data'];
+  http_response_code($response['status']);
+
+} else if ($request_method === 'POST' && strstr($relative_path,  '/api/orders/cancelOrder')) {
+  $pathParts = explode('/', trim($relative_path, '/'));
+  $orderId = end($pathParts);
+  $response = cancelOrder($orderId);
   echo $response['data'];
   http_response_code($response['status']);
 
@@ -77,7 +89,7 @@ function generarHMAC($body, $secretKey) {
 
 function getOrdersByShopId($shopId, $token) {
   global $conn;
-  $stmt = $conn->prepare('SELECT * FROM config WHERE shopId = ?');
+  $stmt = $conn->prepare('SELECT * FROM Config WHERE shopId = ?');
   $stmt->bind_param('s', $shopId);
   $stmt->execute();
   $result = $stmt->get_result();
@@ -121,7 +133,7 @@ function getOrdersByShopId($shopId, $token) {
 
 function getOrderItemsByOrderId($orderId) {
   global $conn;
-  $stmt = $conn->prepare('SELECT * FROM platformOrderItem WHERE orderId = ?');
+  $stmt = $conn->prepare('SELECT * FROM PlatformOrderItem WHERE orderId = ?');
   $stmt->bind_param('s', $orderId);
   $stmt->execute();
   $result = $stmt->get_result();
@@ -136,7 +148,7 @@ function getOrderItemsByOrderId($orderId) {
 }
 
 function acceptOrder($orderId) {
-  global $conn, $token;
+  global $conn, $uberEatsController;
   $stmt = $conn->prepare('SELECT * FROM PlatformOrder WHERE id = ?');
   $stmt->bind_param('s', $orderId);
   $stmt->execute();
@@ -148,53 +160,59 @@ function acceptOrder($orderId) {
     $platform = $data['deliveryPlatform'];
 
     if ($platform == 'UBER_EATS') {
-      $url = 'https://api.uber.com/v1/eats/orders/' . $orderId . '/accept_pos_order';
-      // Inicializar cURL
-      $ch = curl_init($url);
+      global $uberEatsController;
+      return $uberEatsController->acceptOrder($orderId);      
 
-      // Establecer opciones para la solicitud cURL
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  // Devolver el resultado en lugar de imprimirlo
-      curl_setopt($ch, CURLOPT_POST, true);  // Establecer el método POST
-      curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-          'Content-Type: application/json',
-          'Authorization: Bearer ' . $token  // Agregar el token de acceso 
-      ));
-
-      $response = curl_exec($ch);
-
-      if (curl_errno($ch)) {
-          return (Array('status' => 500, 'data' => null, 'message' => 'Error:' . curl_error($ch)));
-      }
-
-      curl_close($ch);
-
-      // Mostrar la respuesta del servidor
-      if(isset(json_decode($response)->message) && json_decode($response)->message == "Order not found") {
-        $status = 2;
-        $stmt = $conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
-        $stmt->bind_param('is', $status, $orderId);
-        $stmt->execute();
-        $stmt->close();
-
-        return (Array('status' => 404, 'data' => $response, 'message' => 'Orden no encontrada o expirada'));
-      }
-      //TODO cambiar el estado de la orden aceptada
-      $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      if ($httpStatusCode == 204) {
-        $status = 3;
-        $stmt = $conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
-        $stmt->bind_param('is', $status, $orderId);
-        $stmt->execute();
-        $stmt->close();
-        return (Array('status' => 200, 'data' => array('message' => 'Orden aceptada correctamente')));
-      }
-      return (Array('status' => 200, 'data' => $response, 'message' => 'Orden aceptada correctamente'));
     } else if ($platform == 'GLOBO'){
       //TODO Petición a Globo para aceptar orden
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para aceptar orden
     }
-  }
+  }  
+}
+
+function denyOrder($orderId) {
+  global $conn, $uberEatsController;
+  $stmt = $conn->prepare('SELECT * FROM PlatformOrder WHERE id = ?');
+  $stmt->bind_param('s', $orderId);
+  $stmt->execute();
+  $result = $stmt->get_result();
   $stmt->close();
-  return (Array('status' => 200, 'data' => array('orderId' => $orderId), 'message' => 'Orden aceptada correctamente'));
+
+  // Verificar si se obtuvieron resultados
+  if ($result->num_rows > 0) {
+    $data = $result->fetch_assoc();
+    $platform = $data['deliveryPlatform'];
+
+    if ($platform == 'UBER_EATS') {
+      return $uberEatsController->denyOrder($orderId);
+    } else if ($platform == 'GLOBO'){
+      //TODO Petición a Globo para denegar orden
+    } else if ($platform == 'JUST_EAT'){
+      //TODO Petición a Just-eat para denegar orden
+    }
+  } 
+}
+
+function cancelOrder($orderId) {
+  global $conn, $uberEatsController;
+  $stmt = $conn->prepare('SELECT * FROM PlatformOrder WHERE id = ?');
+  $stmt->bind_param('s', $orderId);
+  $stmt->execute();
+  $result = $stmt->get_result();
+  $stmt->close();
+
+  // Verificar si se obtuvieron resultados
+  if ($result->num_rows > 0) {
+    $data = $result->fetch_assoc();
+    $platform = $data['deliveryPlatform'];
+
+    if ($platform == 'UBER_EATS') {
+      return $uberEatsController->cancelOrder($orderId);
+    } else if ($platform == 'GLOBO'){
+      //TODO Petición a Globo para denegar orden
+    } else if ($platform == 'JUST_EAT'){
+      //TODO Petición a Just-eat para denegar orden
+    }
+  } 
 }
