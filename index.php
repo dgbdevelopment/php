@@ -38,7 +38,7 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
   } else{
     http_response_code(401);
   }
-//TODO empezar a pedir orders por shopId
+
 } else if ($request_method === 'GET' && strstr($relative_path,  '/api/orders')) {
   $pathParts = explode('/', trim($relative_path, '/'));
   $shopId = end($pathParts);
@@ -50,21 +50,37 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
 } else if ($request_method === 'POST' && strstr($relative_path,  '/api/orders/acceptOrder')) {
   $pathParts = explode('/', trim($relative_path, '/'));
   $orderId = end($pathParts);
-  $response = acceptOrder($orderId);
+  $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
+  $shopId = isset($queryParams['shop_id']) ? $queryParams['shop_id'] : null;
+  file_put_contents('test.txt', $orderId . ' ' . $shopId . ' ' . $accessToken);
+  $response = acceptOrder($orderId, $shopId, $accessToken);
   echo $response['data'];
   http_response_code($response['status']);
 
 } else if ($request_method === 'POST' && strstr($relative_path,  '/api/orders/denyOrder')) {
   $pathParts = explode('/', trim($relative_path, '/'));
   $orderId = end($pathParts);
-  $response = denyOrder($orderId);
+  $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
+  $shopId = isset($queryParams['shop_id']) ? $queryParams['shop_id'] : null;
+  $response = denyOrder($orderId, $shopId, $accessToken);
   echo $response['data'];
   http_response_code($response['status']);
 
 } else if ($request_method === 'POST' && strstr($relative_path,  '/api/orders/cancelOrder')) {
   $pathParts = explode('/', trim($relative_path, '/'));
   $orderId = end($pathParts);
-  $response = cancelOrder($orderId);
+  $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
+  $shopId = isset($queryParams['shop_id']) ? $queryParams['shop_id'] : null;
+  $response = cancelOrder($orderId, $shopId, $accessToken);
+  echo $response['data'];
+  http_response_code($response['status']);
+
+} else if ($request_method === 'POST' && strstr($relative_path,  '/api/orders/orderReady')) {
+  $pathParts = explode('/', trim($relative_path, '/'));
+  $orderId = end($pathParts);
+  $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
+  $shopId = isset($queryParams['shop_id']) ? $queryParams['shop_id'] : null;
+  $response = markOderReady($orderId, $shopId, $accessToken);
   echo $response['data'];
   http_response_code($response['status']);
 
@@ -89,18 +105,9 @@ function generarHMAC($body, $secretKey) {
 
 function getOrdersByShopId($shopId, $token) {
   global $conn;
-  $stmt = $conn->prepare('SELECT * FROM Config WHERE shopId = ?');
-  $stmt->bind_param('s', $shopId);
-  $stmt->execute();
-  $result = $stmt->get_result();
-
-  // Verificar si se obtuvieron resultados
-  if ($result->num_rows > 0) {
-    $data = $result->fetch_assoc();
-    if ($token != $data['authToken']) {
+    if (!isAuth($shopId, $token)) {
       return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
     }
-    $stmt->close();
 
     $stmt_orders = $conn->prepare(
       'SELECT po.*
@@ -110,6 +117,7 @@ function getOrdersByShopId($shopId, $token) {
             OR po.storePlatformId = c.justEatStoreId
       WHERE c.shopId = ? AND status = 1;'
       );
+
     $stmt_orders->bind_param('s', $shopId);
     $stmt_orders->execute();
     $result_orders = $stmt_orders->get_result();
@@ -122,13 +130,6 @@ function getOrdersByShopId($shopId, $token) {
 
     $stmt_orders->close();
     return (Array('status' => 200, 'data' => $data, 'message' => 'Órdenes recibidas correctamente'));
-
-  } else {
-      return (Array('status' => 404, 'data' => null, 'message' => 'No existe ninguna shop con shopId ' . $shopId));
-  }
-
-  $stmt->close();
-
 }
 
 function getOrderItemsByOrderId($orderId) {
@@ -147,8 +148,11 @@ function getOrderItemsByOrderId($orderId) {
   return $data;
 }
 
-function acceptOrder($orderId) {
+function acceptOrder($orderId, $shopId, $accesToken) {
   global $conn, $uberEatsController;
+  if (!isAuth($shopId, $accesToken)) {
+    return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
+  }
   $stmt = $conn->prepare('SELECT * FROM PlatformOrder WHERE id = ?');
   $stmt->bind_param('s', $orderId);
   $stmt->execute();
@@ -168,11 +172,16 @@ function acceptOrder($orderId) {
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para aceptar orden
     }
+  } else {
+    return (Array('status' => 404, 'data' => null, 'message' => 'Orden no encontrada'));
   }  
 }
 
-function denyOrder($orderId) {
+function denyOrder($orderId, $shopId, $token) {
   global $conn, $uberEatsController;
+  if (!isAuth($shopId, $token)) {
+    return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
+  }
   $stmt = $conn->prepare('SELECT * FROM PlatformOrder WHERE id = ?');
   $stmt->bind_param('s', $orderId);
   $stmt->execute();
@@ -194,8 +203,11 @@ function denyOrder($orderId) {
   } 
 }
 
-function cancelOrder($orderId) {
+function cancelOrder($orderId, $shopId, $token) {
   global $conn, $uberEatsController;
+  if (!isAuth($shopId, $token)) {
+    return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
+  }
   $stmt = $conn->prepare('SELECT * FROM PlatformOrder WHERE id = ?');
   $stmt->bind_param('s', $orderId);
   $stmt->execute();
@@ -214,5 +226,49 @@ function cancelOrder($orderId) {
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para denegar orden
     }
-  } 
+  }
+}
+
+function markOderReady($orderId, $shopId, $token) {
+  global $conn, $uberEatsController;
+  if (!isAuth($shopId, $token)) {
+    return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
+  }
+  $stmt = $conn->prepare('SELECT * FROM PlatformOrder WHERE id = ?');
+  $stmt->bind_param('s', $orderId);
+  $stmt->execute();
+  $result = $stmt->get_result();
+  $stmt->close();
+
+  // Verificar si se obtuvieron resultados
+  if ($result->num_rows > 0) {
+    $data = $result->fetch_assoc();
+    $platform = $data['deliveryPlatform'];
+
+    if ($platform == 'UBER_EATS') {
+      return $uberEatsController->markOderReady($orderId);
+    } else if ($platform == 'GLOBO'){
+      //TODO Petición a Globo para denegar orden
+    } else if ($platform == 'JUST_EAT'){
+      //TODO Petición a Just-eat para denegar orden
+    }
+  }
+}
+  
+function isAuth($shopId, $token) {
+  global $conn;
+  $stmt = $conn->prepare('SELECT * FROM Config WHERE shopId = ?');
+  $stmt->bind_param('s', $shopId);
+  $stmt->execute();
+  $result = $stmt->get_result();
+
+  // Verificar si se obtuvieron resultados
+  if ($result->num_rows > 0) {
+    $data = $result->fetch_assoc();
+    if ($token == $data['authToken']) {
+      return true;
+    }      
+  }
+  $stmt->close();
+  return false;
 }

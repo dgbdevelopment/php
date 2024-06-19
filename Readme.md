@@ -1,19 +1,37 @@
 # Endpoints para APP:
 
 ## Recibir todas las ordenes por shopId
-https://betadelivery.turbopos.es/api/orders/:shopId?access_token=Shop_access_token
+Method **GET**
+https://betadelivery.turbopos.es/api/orders/:shopId?access_token=SHOP_ACCESS_TOKEN
 El parámetro **`:shopId`** es necesario
-El valor **`Shop_access_token`** es necesario
+El valor **`SHOP_ACCESS_TOKEN`** es necesario
 
 ## Aceptar una orden
-http://betadelivery.turbopos.es/api/orders/acceptOrder/:orderId
+Method **POST**
+http://betadelivery.turbopos.es/api/orders/acceptOrder/:orderId?shop_id=SHOP_ID&access_token=SHOP_ACCESS_TOKEN
 El parámetro **`:orderId`** es necesario
+El valor **`SHOP_ID`** es necesario
+El valor **`SHOP_ACCESS_TOKEN`** es necesario
+
 
 ## Denegar una orden
-http://betadelivery.turbopos.es/api/orders/denyOrder/:orderId
+Method **POST**
+http://betadelivery.turbopos.es/api/orders/denyOrder/:orderId?shop_id=SHOP_ID&access_token=SHOP_ACCESS_TOKEN
 El parámetro **`:orderId`** es necesario
+El valor **`SHOP_ID`** es necesario
+El valor **`SHOP_ACCESS_TOKEN`** es necesario
 
 ## Cancelar una orden
-http://betadelivery.turbopos.es/api/orders/cancelOrder/:orderId
+Method **POST**
+http://betadelivery.turbopos.es/api/orders/cancelOrder/:orderId?shop_id=SHOP_ID&access_token=SHOP_ACCESS_TOKEN
 El parámetro **`:orderId`** es necesario
+El valor **`SHOP_ID`** es necesario
+El valor **`SHOP_ACCESS_TOKEN`** es necesario
+
+## Marcar una orden como preparada
+Method **POST**
+http://betadelivery.turbopos.es/api/orders/cancelOrder/:orderId?shop_id=SHOP_ID&access_token=SHOP_ACCESS_TOKEN
+El parámetro **`:orderId`** es necesario
+El valor **`SHOP_ID`** es necesario
+El valor **`SHOP_ACCESS_TOKEN`** es necesario
 

@@ -21,6 +21,13 @@ class UBerEatsController {
                 $orderId = $body["meta"]["resource_id"];
                 $this->performOrderNotification($orderId);
                 break;
+            case "orders.cancel":
+              $orderId = $body["meta"]["resource_id"];
+              $this->cancelOrderOnDB($orderId);
+              break;
+            default:
+              file_put_contents('NotCatchedRequests.json', date("d/m/Y-H:i:s") . " -> " . $body, FILE_APPEND);
+              break;
         }
     }
 
@@ -259,7 +266,8 @@ class UBerEatsController {
         "deny_reason" => array(
           "info" => "Denied by shop",
           "type" => "CAPACITY",
-          "client_error_code" => "408"
+          "client_error_code" => "408",
+          "item_metadata" => new stdClass()
         )
       )));
 
@@ -272,7 +280,6 @@ class UBerEatsController {
       $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
       curl_close($ch);
 
-      file_put_contents('statusCode.txt', $httpStatusCode);
       // Mostrar la respuesta del servidor
       if($httpStatusCode == 404 || $httpStatusCode == 400) {
         $status = 2;
@@ -302,10 +309,10 @@ class UBerEatsController {
 
       // Establecer opciones para la solicitud cURL
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  // Devolver el resultado en lugar de imprimirlo
-      curl_setopt($ch, CURLOPT_POST, true);  // Establecer el método POST
+      curl_setopt($ch, CURLOPT_POST, true);  
       curl_setopt($ch, CURLOPT_HTTPHEADER, array(
           'Content-Type: application/json',
-          'Authorization: Bearer ' . $this->getToken()  // Agregar el token de acceso 
+          'Authorization: Bearer ' . $this->getToken()  
       ));
       curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(array(
         "deny_reason" => array(
@@ -324,8 +331,7 @@ class UBerEatsController {
       $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
       curl_close($ch);
 
-      file_put_contents('statusCode.txt', $httpStatusCode);
-      // Mostrar la respuesta del servidor
+      // Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
       if($httpStatusCode == 404 || $httpStatusCode == 400) {
         $status = 2;
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
@@ -335,9 +341,9 @@ class UBerEatsController {
 
         return (Array('status' => $httpStatusCode, 'data' => $response, 'message' => 'Orden no encontrada o expirada'));
       }
-      //TODO cambiar el estado de la orden cancelada
+      //Cambiar el estado de la orden cancelada
       else if ($httpStatusCode == 200) {
-        $status = 4;
+        $status = 5;
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();
@@ -345,6 +351,58 @@ class UBerEatsController {
         return (Array('status' => 200, 'data' => json_encode(array('message' => 'Orden cancelada correctamente')), 'message' => 'Orden cancelada correctamente'));
       }
       return (Array('status' => 500, 'data' => null, 'message' => 'Error al denegar la orden'));
+    }
+
+    private function cancelOrderOnDB($orderId){
+      $status = 5;
+      $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+      $stmt->bind_param('is', $status, $orderId);
+      $stmt->execute();
+      $stmt->close();
+    }
+
+    public function markOderReady($orderId){
+      $url = 'https://api.uber.com/v1/delivery/order/' . $orderId . '/ready';
+      // Inicializar cURL
+      $ch = curl_init($url);
+
+      // Establecer opciones para la solicitud cURL
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  // Devolver el resultado en lugar de imprimirlo
+      curl_setopt($ch, CURLOPT_POST, true);  // Establecer el método POST
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+          'Content-Type: application/json',
+          'Authorization: Bearer ' . $this->getToken()  // Agregar el token de acceso 
+      ));
+
+      $response = curl_exec($ch);
+
+      if (curl_errno($ch)) {
+          return (Array('status' => 500, 'data' => null, 'message' => 'Error:' . curl_error($ch)));
+      }
+
+      $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      curl_close($ch);
+
+      //Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
+      if($httpStatusCode == 404 || $httpStatusCode == 400) {
+        $status = 2;
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+
+        return (Array('status' => $httpStatusCode, 'data' => $response, 'message' => 'Orden no encontrada o expirada'));
+      }
+      //TODO cambiar el estado de la orden a READY
+      else if ($httpStatusCode == 200) {
+        $status = 6;
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+        return (Array('status' => 200, 'data' => json_encode(array('message' => 'Orden marcada como preparada correctamente')), 'message' => 'Orden marcada como preparada correctamente'));
+      }
+      return (Array('status' => 500, 'data' => null, 'message' => 'Error al marcar la orden como preparada'));
     }
 
 }

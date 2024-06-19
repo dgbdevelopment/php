@@ -38,7 +38,9 @@
     "OFFERED" => 1,
     "EXPIRED" => 2,
     "ACCEPTED" => 3,
-    "DENNIED" => 4
+    "DENNIED" => 4,
+    "CANCELLED" => 5,
+    "READY" => 6
   ];
 
   $typeOrderList = [
