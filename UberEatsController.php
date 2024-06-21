@@ -96,7 +96,7 @@ class UBerEatsController {
 
         // Preparar y ejecutar la declaración
         $stmt = $this->conn->prepare($query);
-        $stmt->bind_param('sssiddsssssssiss', 
+        $stmt->bind_param('ssiiddisssssssis', 
             $id, $name, $date, $status, $paid, $discount, 
             $numCommensals, $clientId, $clientName, $clientPhone, 
             $storePlatformId, $observations, $address, $discountCodes, 
@@ -151,7 +151,7 @@ class UBerEatsController {
 
             // Vincular los parámetros
             $stmt->bind_param(
-                'sssssiidii',
+                'sssssiddid',
                 $itemForStorage->id,
                 $itemForStorage->platformItemId,
                 $itemForStorage->orderId,

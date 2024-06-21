@@ -3,6 +3,8 @@
   $client_secret = "7BwCs4ruxKLVWrjBTVk2MjJkNhH6pZ7JTKMBB5bu";
   $client_id = "TCpq5rbC6xjfK2Xf1Xm1Gfy0Brek5xbz";
 
+  $glovoApiKey = "fakeToken";
+
   $servername = "127.0.0.1";
   $username = "deliverybeta";
   $password = "3_Mrzx62";
