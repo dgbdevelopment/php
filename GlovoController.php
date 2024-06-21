@@ -1,6 +1,6 @@
 <?php
 
-class UBerEatsController {
+class GlovoController {
     private $token;
     private $conn;
     private $statusList;
@@ -13,83 +13,73 @@ class UBerEatsController {
         $this->typeOrderList = $typeOrderList;
     }
 
-    public function receiveRequest($body) {
-        $body = json_decode($body, true);
-        $eventType = $body["event_type"];
-        switch ($eventType){
-            case "orders.notification":
-                $orderId = $body["meta"]["resource_id"];
-                $this->performOrderNotification($orderId);
-                break;
-            case "orders.cancel":
-              $orderId = $body["meta"]["resource_id"];
-              $this->cancelOrderOnDB($orderId);
-              break;
-            default:
-              file_put_contents('NotCatchedRequests.json', date("d/m/Y-H:i:s") . " -> " . $body, FILE_APPEND);
-              break;
-        }
+    public function receiveRequest($body, $server) {
+      file_put_contents('./server_log_from_glovo'. date("j.n.Y").'.json', $server);
+      file_put_contents('./body_log_from_glovo'. date("j.n.Y").'.json', $body);
+      $order = json_decode($body);
+      $this->performOrderNotification($order);
+      // $eventType = $body["event_type"];
+      // switch ($eventType){
+      //     case "orders.notification":
+      //         $orderId = $body["meta"]["resource_id"];
+      //         $this->performOrderNotification($orderId);
+      //         break;
+      //     case "orders.cancel":
+      //       $orderId = $body["meta"]["resource_id"];
+      //       $this->cancelOrderOnDB($orderId);
+      //       break;
+      //     default:
+      //       file_put_contents('NotCatchedRequests.json', date("d/m/Y-H:i:s") . " -> " . $body, FILE_APPEND);
+      //       break;
+      // }
+
     }
 
     public function getToken(){
       return $this->token;
     }
 
-    private function performOrderNotification($orderId) {
-        $url = 'https://api.uber.com/v1/delivery/order/' . $orderId . "?expand=carts,deliveries,payment";
-        $curl = curl_init();
-        curl_setopt($curl, CURLOPT_URL, $url);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        $headers = [
-            'Authorization: Bearer ' . $this->token
-        ];
-        curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
-        $response = curl_exec($curl);
-        $http_status = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        if ($response !== false && $http_status === 200) {
-            $response = json_decode($response);
-            $this->buildPlatformOrder($response->order);
-            $this->buildPlatformOrderItem($response->order);
-        }
-        curl_close($curl);
+    private function performOrderNotification($order) {
+     
+      $this->buildPlatformOrder($order);
+      $this->buildPlatformOrderItem($order);
     }
 
     private function buildPlatformOrder($order) {
-        file_put_contents('LastOrderFromUberEats_log.json', json_encode($order));
-
-        $id = $order->id;
-        $name = $order->display_id;
-        $date = strtotime($order->created_time) * 1000;
-        $status = $this->statusList[$order->state];
-        $paid = ($order->payment->payment_detail->order_total->gross->amount_e5) / 100000;
-        $discount = ($order->payment->payment_detail->promotions->total->gross->amount_e5) / 100000;
-        $clientId = $order->customers[0]->id;
-        $clientName = $order->customers[0]->name->display_name;
-        $clientPhone = $order->customers[0]->contact->phone->number;
-        $storePlatformId = $order->store->id;
-        $address = isset($order->deliveries[0]->location) ? $order->delivery->dropoff->location->street_address_line_one . ', ' . $order->delivery->dropoff->location->street_address_line_two : 'No disponible';
-        $typeOrder = $this->typeOrderList[$order->fulfillment_type];
-        $observations = isset($order->store_instructions) ? $order->store_instructions : '';
-        $deliveryPlatform = $order->ordering_platform;
+        file_put_contents('LastOrderFromGlovo_log.json', json_encode($order));
+        $id = $order->order_id;
+        $name = $order->order_code;
+        $date = strtotime($order->order_time) * 1000;
+        $status = 1;
+        $paid = ($order->estimated_total_price) / 100;
+        $discount = ($order->partner_discounted_products_total) / 100;
+        $clientId = $order->customer->hash;
+        $clientName = $order->customer->name;
+        $clientPhone = $order->customers->phone_number;
+        $storePlatformId = $order->store_id;
+        $address = isset($order->delivery_address) ? $order->delivery_address->label : 'No disponible';
+        $typeOrder = $order->is_picked_up_by_customer ? 0 : 2;
+        $observations = $order->allergy_info . PHP_EOL . $order->special_requirements;
+        $deliveryPlatform = 'GLOVO';
         $discountCodes = ''; // Agrega esta línea si es necesario para el parámetro $discountCodes
         $numCommensals = 0; // Agrega esta línea si es necesario para el parámetro $numCommensals
 
-        // file_put_contents('test.txt',
-        //     'id: ' . $id . PHP_EOL . 
-        //     'name:  ' . $name . PHP_EOL . 
-        //     'date: ' . $date . PHP_EOL . 
-        //     'status:  ' . $status . PHP_EOL .
-        //     'paid:  ' . $paid . PHP_EOL .
-        //     'discount: ' . $discount . PHP_EOL .
-        //     'clientId: ' . $clientId . PHP_EOL .
-        //     'clientName: '. $clientName . PHP_EOL .
-        //     'clientPhone: '. $clientPhone . PHP_EOL .
-        //     'address: '. $address . PHP_EOL .
-        //     'storePlatformId: ' . $storePlatformId . PHP_EOL .
-        //     'deliveryPlatform: ' . $deliveryPlatform . PHP_EOL .
-        //     'typeOrder: ' . $typeOrder . PHP_EOL .
-        //     'observations: ' . $observations . PHP_EOL
-        // );
+        file_put_contents('GlovoVariables.txt',
+            'id: ' . $id . PHP_EOL . 
+            'name:  ' . $name . PHP_EOL . 
+            'date: ' . $date . PHP_EOL . 
+            'status:  ' . $status . PHP_EOL .
+            'paid:  ' . $paid . PHP_EOL .
+            'discount: ' . $discount . PHP_EOL .
+            'clientId: ' . $clientId . PHP_EOL .
+            'clientName: '. $clientName . PHP_EOL .
+            'clientPhone: '. $clientPhone . PHP_EOL .
+            'address: '. $address . PHP_EOL .
+            'storePlatformId: ' . $storePlatformId . PHP_EOL .
+            'deliveryPlatform: ' . $deliveryPlatform . PHP_EOL .
+            'typeOrder: ' . $typeOrder . PHP_EOL .
+            'observations: ' . $observations . PHP_EOL
+        );
 
         $query = "INSERT INTO PlatformOrder (id, name, date, status, paid, discount, numCommensals, clientId, clientName, clientPhone, storePlatformId, observations, address, discountCodes, typeOrder, deliveryPlatform) 
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -105,9 +95,9 @@ class UBerEatsController {
 
         // Ejecutar la declaración y verificar si se insertó correctamente
         if ($stmt->execute()) {
-            file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Registro en PlaftormOrder insertado correctamente." . PHP_EOL, FILE_APPEND);
+            file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Glovo Order inserted successfully." . PHP_EOL, FILE_APPEND);
         } else {
-            file_put_contents('db_log.txt',  date("d/m/Y-H:i:s") . " -> Error al insertar el registro en PlaftormOrder: " . json_encode($stmt) . PHP_EOL, FILE_APPEND);
+            file_put_contents('db_log.txt',  date("d/m/Y-H:i:s") . " -> Error inserting Glovo order: " . json_encode($stmt) . PHP_EOL, FILE_APPEND);
         }
 
         // Cerrar la declaración
@@ -117,8 +107,8 @@ class UBerEatsController {
     private function buildPlatformOrderItem($order) {
         $itemForStorage = new stdClass();
         foreach ($order->carts[0]->items as $item) {
-            $itemForStorage->id = $this->generateUUID();
             $itemForStorage->platformItemId = $item->cart_item_id;
+            $itemForStorage->itemId = $item->id;
             $itemForStorage->orderId = $order->id;
             $itemForStorage->itemName = $item->title;
             $itemForStorage->comment = $item->customer_request->special_instructions;
@@ -132,7 +122,7 @@ class UBerEatsController {
             }
 
             foreach($order->payment->tax_reporting->breakdown->items as $tax){
-                if($tax->instance_id == $itemForStorage->platformItemId){
+                if($tax->instance_id == $itemForStorage->id){
                     $itemForStorage->vat = $tax->taxes[0]->rate * 100;
                 }
             }
@@ -141,7 +131,7 @@ class UBerEatsController {
 
             // Preparar la consulta SQL
             $sql = "INSERT INTO PlatformOrderItem (
-                id, platformItemId, orderId, itemName, comment, quantity, price, total, date, vat
+                platformItemId, itemId, orderId, itemName, comment, quantity, price, total, date, vat
             ) VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )";
@@ -152,8 +142,8 @@ class UBerEatsController {
             // Vincular los parámetros
             $stmt->bind_param(
                 'sssssiidii',
-                $itemForStorage->id,
                 $itemForStorage->platformItemId,
+                $itemForStorage->itemId,
                 $itemForStorage->orderId,
                 $itemForStorage->itemName,
                 $itemForStorage->comment,
@@ -166,9 +156,9 @@ class UBerEatsController {
 
             // Ejecutar la consulta
             if ($stmt->execute()) {
-              file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Registro en PlaftormOrderItem insertado correctamente." . PHP_EOL, FILE_APPEND);
+                echo "Registro insertado exitosamente.";
             } else {
-              file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Error al insertar el registro en PlaftormOrderItem: " . $stmt->error . PHP_EOL, FILE_APPEND);
+                echo "Error al insertar el registro: " . $stmt->error;
             }
 
             // Cerrar la declaración
@@ -403,14 +393,6 @@ class UBerEatsController {
         return (Array('status' => 200, 'data' => json_encode(array('message' => 'Orden marcada como preparada correctamente')), 'message' => 'Orden marcada como preparada correctamente'));
       }
       return (Array('status' => 500, 'data' => null, 'message' => 'Error al marcar la orden como preparada'));
-    }
-
-    private function generateUUID() {
-      $data = random_bytes(16);
-      $data[6] = chr(ord($data[6]) & 0x0f | 0x40); // Versión 4
-      $data[8] = chr(ord($data[8]) & 0x3f | 0x80); // Variante RFC 4122
-  
-      return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
 
 }

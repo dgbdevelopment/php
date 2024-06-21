@@ -4,10 +4,12 @@
 
 require_once "./config.php";
 require_once "./UberEatsController.php";
+require_once "./GlovoController.php";
 
 $uberEatsController = new UberEatsController($client_id, $client_secret, $conn, $statusList, $typeOrderList);
+$glovoController = new glovoController($client_id, $client_secret, $conn, $statusList, $typeOrderList);
 
-/********* Daber que llega en el body de la petición a Uber Eats ************/
+/********* Daber que llega en el body de la petición ************************/
 $log  = file_get_contents( 'php://input' );
 // file_put_contents('./body_log_'.date("j.n.Y-h.m.s").'.json', $log);
 /****************************************************************************/
@@ -84,11 +86,12 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
   echo $response['data'];
   http_response_code($response['status']);
 
-}else if ($request_method === 'GET' && $relative_path === '/api/glovo') {
+} else if ($request_method === 'GET' && $relative_path === '/api/glovo') {
+  $glovoController->receiveRequest($body, $server);
+  http_response_code(200);
+} else if ($request_method === 'GET' && $relative_path === '/api/just_eat') {
   http_response_code(403);
-}else if ($request_method === 'GET' && $relative_path === '/api/just_eat') {
-  http_response_code(403);
-}else{
+} else{
   http_response_code(404);
 }
 

@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS `PlatformOrder` (
 );
 
 CREATE TABLE IF NOT EXISTS `PlatformOrderItem` (
-    `id` INT NOT NULL AUTO_INCREMENT,
-    `platformItemid` VARCHAR(255),
-    `itemId` VARCHAR(255),
+    `id` VARCHAR(255) UNIQUE,
+    `platformItemId` VARCHAR(255),
+    `parentMenuId` VARCHAR(255),
     `discount` DECIMAL(10,2),
     `discountType` INT,
     `discountCode` VARCHAR(255),
@@ -41,9 +41,9 @@ CREATE TABLE IF NOT EXISTS `PlatformOrderItem` (
 );
 
 CREATE TABLE IF NOT EXISTS `PlatformComplement` (
-    `id` INT NOT NULL AUTO_INCREMENT,
+    `id` VARCHAR(255) UNIQUE,
     `complementId` VARCHAR(255),
-    `platformOrderItemId` INT,
+    `platformOrderItemId` VARCHAR(255),
     `complementName` VARCHAR(255),
     `comment` TEXT,
     `quantity` INT,
@@ -56,11 +56,10 @@ CREATE TABLE IF NOT EXISTS `PlatformComplement` (
 );
 
 CREATE TABLE IF NOT EXISTS `Config` (
-    `id` INT NOT NULL AUTO_INCREMENT,
     `shopId` VARCHAR(255) UNIQUE,
     `uberStoreId` VARCHAR(255),
     `globoStoreId` VARCHAR(255),
     `justEatStoreId` VARCHAR(255),
     `authToken` VARCHAR(255),
-    PRIMARY KEY(`id`)
+    PRIMARY KEY(`shopId`)
 );

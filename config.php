@@ -44,6 +44,8 @@
   ];
 
   $typeOrderList = [
-    "DELIVERY_BY_UBER" => 1
+    "PICKED_UP_BY_CUSTOMER" => 0,
+    "DELIVERY_BY_UBER" => 1,
+    "DELIVERY_BY_GLOVO" => 2,
   ];
 
