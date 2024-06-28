@@ -29,7 +29,7 @@ class GlovoController {
     }
 
     private function buildPlatformOrder($order) {
-        // file_put_contents('LastOrderFromGlovo_log.json', json_encode($order));
+        file_put_contents('LastOrderFromGlovo_log.json', json_encode($order));
         $id = $order->order_id;
         $name = $order->order_code;
         $date = strtotime($order->order_time) * 1000;
@@ -211,18 +211,47 @@ class GlovoController {
       $stmt->close();
     }
 
-    public function cancelOrder($order) {
-      $order = json_decode($order);
-      $id = $order->order_id;
-      $query = "UPDATE PlatformOrder SET status = ? WHERE id = ?";
-      $stmt = $this->conn->prepare($query);
-      $stmt->bind_param('is', $this->statusList['CANCELLED'], $id);
-      if ($stmt->execute()) {
-        file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Order " . $id . " updated successfully." . PHP_EOL, FILE_APPEND);
-      } else {
-        file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Error updating order: " . $stmt->error . PHP_EOL, FILE_APPEND);
+    // public function cancelOrder($order) {
+    //   $order = json_decode($order);
+    //   $id = $order->order_id;
+    //   $query = "UPDATE PlatformOrder SET status = ? WHERE id = ?";
+    //   $stmt = $this->conn->prepare($query);
+    //   $stmt->bind_param('is', $this->statusList['CANCELLED'], $id);
+    //   if ($stmt->execute()) {
+    //     file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Order " . $id . " updated successfully." . PHP_EOL, FILE_APPEND);
+    //   } else {
+    //     file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Error updating order: " . $stmt->error . PHP_EOL, FILE_APPEND);
+    //   }
+    //   $stmt->close();    
+    // }
+
+    public function cancelOrder($order){
+      $orderId = json_decode($order)->order_id;
+      $status = 5;
+      // Iniciar la transacción
+      $this->conn->begin_transaction();
+      try {
+        // Preparar la sentencia para actualizar la tabla PlatformOrder
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+
+        // Preparar la sentencia para insertar en la tabla CancelledOrders
+        $stmt = $this->conn->prepare('INSERT INTO CancelledOrders (orderId, deliveryPlatform, notified) VALUES (?, ?, ?)');
+        $deliveryPlatform = 'GLOVO'; 
+        $notified = 0; 
+        $stmt->bind_param('ssi', $orderId, $deliveryPlatform, $notified);
+        $stmt->execute();
+        $stmt->close();
+
+        // Confirmar la transacción
+        $this->conn->commit();
+      } catch (Exception $e) {
+        // Revertir la transacción en caso de error
+        $this->conn->rollback();
+        throw $e;
       }
-      $stmt->close();    
     }
 
     private function generateUUID() {

@@ -1,9 +1,9 @@
 
 <?php
 //Ruta original: https://betadelivery.turbopos.es/api/uber_eats
-ini_set('display_errors', '1');
-ini_set('display_startup_errors', '1');
-error_reporting(E_ALL);
+// ini_set('display_errors', '1');
+// ini_set('display_startup_errors', '1');
+// error_reporting(E_ALL);
 
 require_once "./config.php";
 require_once "./UberEatsController.php";
@@ -108,7 +108,8 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
   http_response_code($response['status']);
 
 } else if ($request_method === 'GET' && $relative_path === '/api/glovo/dispatched') {
-  if (getallheaders()["Authorization"] != $glovoApiKey){
+  $headers = getallheaders();
+  if ($headers["Authorization"] != $glovoApiKey){
     echo json_encode(['message' => 'No estás uatorizado']);
     http_response_code(401);
   } else {
@@ -178,6 +179,27 @@ function getOrderItemsByOrderId($orderId) {
 
   $data = array();
   while ($item = $result->fetch_assoc()) {
+      if ($item['isMenu'] == 1) {
+        $item['menuItems'] = getMenuItemsForItem($item['id']);
+      }
+      $item['complements'] = getComplementsForItem($item['id']);
+      $data[] = $item;
+  }
+
+  $stmt->close();
+  return $data;
+}
+
+function getMenuItemsForItem($itemId) {
+  global $conn;
+  $stmt = $conn->prepare('SELECT * FROM PlatformOrderItem WHERE parentMenuId = ?');
+  $stmt->bind_param('s', $itemId);
+  $stmt->execute();
+  $result = $stmt->get_result();
+
+  $data = array();
+  while ($item = $result->fetch_assoc()) {
+      $item['complements'] = getComplementsForItem($item['id']);
       $data[] = $item;
   }
 
@@ -345,4 +367,19 @@ function getCancelledOrders($shopId, $accesToken){
 
   $stmt->close();
   return (Array('status' => 200, 'data' => $data, 'message' => 'Órdenes canceladas recibidas correctamente'));
+}
+
+function getComplementsForItem($itemId){
+  global $conn;
+  $stmt = $conn->prepare('SELECT * FROM PlatformComplement WHERE platformOrderItemId = ?');
+  $stmt->bind_param('s', $itemId);
+  $stmt->execute();
+  $result = $stmt->get_result();
+
+  $data = array();
+  while ($complement = $result->fetch_assoc()) {
+    $data[] = $complement;
+  }
+  $stmt->close();
+  return sizeof($data) > 0 ? $data : null;
 }
