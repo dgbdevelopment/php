@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS `PlatformOrderItem` (
     `total` DECIMAL(10,2),
     `date` BIGINT,
     `weight` DECIMAL(10,2),
+    `isMenu` INT DEFAULT 0,
     `menuName` VARCHAR(255),
     `variation` VARCHAR(255),
     `vat` DECIMAL(10,2),
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS `PlatformOrderItem` (
 
 CREATE TABLE IF NOT EXISTS `PlatformComplement` (
     `id` VARCHAR(255) UNIQUE,
-    `complementId` VARCHAR(255),
+    `platformComplementId` VARCHAR(255),
     `platformOrderItemId` VARCHAR(255),
     `complementName` VARCHAR(255),
     `comment` TEXT,
@@ -50,7 +51,6 @@ CREATE TABLE IF NOT EXISTS `PlatformComplement` (
     `price` DECIMAL(10,2),
     `total` DECIMAL(10,2),
     `date` BIGINT,
-    `vat` DECIMAL(10,2),
     PRIMARY KEY(`id`),
     FOREIGN KEY (`platformOrderItemId`) REFERENCES `PlatformOrderItem`(`id`) ON DELETE CASCADE
 );
@@ -58,8 +58,22 @@ CREATE TABLE IF NOT EXISTS `PlatformComplement` (
 CREATE TABLE IF NOT EXISTS `Config` (
     `shopId` VARCHAR(255) UNIQUE,
     `uberStoreId` VARCHAR(255),
-    `globoStoreId` VARCHAR(255),
+    `glovoStoreId` VARCHAR(255),
     `justEatStoreId` VARCHAR(255),
     `authToken` VARCHAR(255),
     PRIMARY KEY(`shopId`)
+);
+
+CREATE TABLE IF NOT EXISTS `CancelledOrders` (
+    `orderId` VARCHAR(255) UNIQUE,
+    `deliveryPlatform` VARCHAR(255),
+    `notified` INT DEFAULT 0,
+    PRIMARY KEY(`orderId`),
+    FOREIGN KEY (`orderId`) REFERENCES `PlatformOrder`(`id`) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS `Tokens` (
+  `platform` VARCHAR(255) UNIQUE,
+  `token` TEXT,
+  `expirationDate` BIGINT DEFAULT 0
 );

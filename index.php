@@ -1,6 +1,9 @@
 
 <?php
 //Ruta original: https://betadelivery.turbopos.es/api/uber_eats
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+error_reporting(E_ALL);
 
 require_once "./config.php";
 require_once "./UberEatsController.php";
@@ -9,13 +12,15 @@ require_once "./GlovoController.php";
 $uberEatsController = new UberEatsController($client_id, $client_secret, $conn, $statusList, $typeOrderList);
 $glovoController = new glovoController($glovoApiKey, $conn, $statusList, $typeOrderList);
 
-/********* Daber que llega en el body de la petición ************************/
-// $log  = file_get_contents( 'php://input' );
-// file_put_contents('./body_log_'.date("j.n.Y-h.m.s").'.json', $log);
+/********* Saber que llega en el body de la petición ************************/
+$log  = file_get_contents( 'php://input' );
+file_put_contents('./body_log_'.date("d-m-Y").'.txt', date('H:i:s') . " => " . $log . PHP_EOL, FILE_APPEND);
 /****************************************************************************/
 
+/********* Saber que llega en $_SERVER **************************************/
 $server = json_encode($_SERVER);
-// file_put_contents('./server_log_'.date("j.n.Y").'.json', $server);
+file_put_contents('./server_log_'.date("d-m-Y").'.txt', date('H:i:s') . " => " . $server . PHP_EOL, FILE_APPEND);
+/****************************************************************************/
 
 $request_method = $_SERVER['REQUEST_METHOD'];
 $route = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -54,7 +59,6 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
   $orderId = end($pathParts);
   $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
   $shopId = isset($queryParams['shop_id']) ? $queryParams['shop_id'] : null;
-  file_put_contents('test.txt', $orderId . ' ' . $shopId . ' ' . $accessToken);
   $response = acceptOrder($orderId, $shopId, $accessToken);
   echo $response['data'];
   http_response_code($response['status']);
@@ -77,6 +81,23 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
   echo $response['data'];
   http_response_code($response['status']);
 
+} else if ($request_method === 'GET' && strstr($relative_path,  '/api/getCancelledOrders')) {
+  $pathParts = explode('/', trim($relative_path, '/'));
+  $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
+  $shopId = isset($queryParams['shop_id']) ? $queryParams['shop_id'] : null;
+  $response = getCancelledOrders($shopId, $accessToken);
+  echo json_encode($response['data']);
+  http_response_code($response['status']);
+
+} else if ($request_method === 'POST' && strstr($relative_path,  '/api/orders/markCancelledAsNotified')) {
+  $pathParts = explode('/', trim($relative_path, '/'));
+  $orderId = end($pathParts);
+  $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
+  $shopId = isset($queryParams['shop_id']) ? $queryParams['shop_id'] : null;
+  $response = markCancelledAsNotified($orderId, $shopId, $accessToken);
+  echo $response['data'];
+  http_response_code($response['status']);
+
 } else if ($request_method === 'POST' && strstr($relative_path,  '/api/orders/orderReady')) {
   $pathParts = explode('/', trim($relative_path, '/'));
   $orderId = end($pathParts);
@@ -86,13 +107,21 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
   echo $response['data'];
   http_response_code($response['status']);
 
-} else if ($request_method === 'GET' && $relative_path === '/api/glovo') {
+} else if ($request_method === 'GET' && $relative_path === '/api/glovo/dispatched') {
   if (getallheaders()["Authorization"] != $glovoApiKey){
     echo json_encode(['message' => 'No estás uatorizado']);
     http_response_code(401);
   } else {
     http_response_code(200);
     $glovoController->receiveRequest(file_get_contents( 'php://input' ));
+  }
+} else if ($request_method === 'GET' && $relative_path === '/api/glovo/cancelled') {
+  if (getallheaders()["Authorization"] != $glovoApiKey){
+    echo json_encode(['message' => 'No estás uatorizado']);
+    http_response_code(401);
+  } else {
+    http_response_code(200);
+    $glovoController->cancelOrder(file_get_contents( 'php://input' ));
   }
 } else if ($request_method === 'GET' && $relative_path === '/api/just_eat') {
   http_response_code(403);
@@ -121,7 +150,7 @@ function getOrdersByShopId($shopId, $token) {
       'SELECT po.*
         FROM PlatformOrder po
         JOIN Config c ON po.storePlatformId = c.uberStoreId 
-            OR po.storePlatformId = c.globoStoreId
+            OR po.storePlatformId = c.glovoStoreId
             OR po.storePlatformId = c.justEatStoreId
       WHERE c.shopId = ? AND status = 1;'
       );
@@ -175,8 +204,8 @@ function acceptOrder($orderId, $shopId, $accesToken) {
       global $uberEatsController;
       return $uberEatsController->acceptOrder($orderId);      
 
-    } else if ($platform == 'GLOBO'){
-      //TODO Petición a Globo para aceptar orden
+    } else if ($platform == 'GLOVO'){
+      //TODO Petición a Glovo para aceptar orden
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para aceptar orden
     }
@@ -203,8 +232,8 @@ function denyOrder($orderId, $shopId, $token) {
 
     if ($platform == 'UBER_EATS') {
       return $uberEatsController->denyOrder($orderId);
-    } else if ($platform == 'GLOBO'){
-      //TODO Petición a Globo para denegar orden
+    } else if ($platform == 'GLOVO'){
+      //TODO Petición a Glovo para denegar orden
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para denegar orden
     }
@@ -229,11 +258,28 @@ function cancelOrder($orderId, $shopId, $token) {
 
     if ($platform == 'UBER_EATS') {
       return $uberEatsController->cancelOrder($orderId);
-    } else if ($platform == 'GLOBO'){
-      //TODO Petición a Globo para denegar orden
+    } else if ($platform == 'GLOVO'){
+      //TODO Petición a Glovo para denegar orden
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para denegar orden
     }
+  }
+}
+
+function markCancelledAsNotified($orderId, $shopId, $accessToken){
+  global $conn;
+  if (!isAuth($shopId, $accessToken)) {
+    return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
+  }
+  $stmt = $conn->prepare('UPDATE CancelledOrders SET notified = 1 WHERE orderId = ?');
+  $stmt->bind_param('s', $orderId);
+  $result = $stmt->execute();
+  $rowsAffected = $stmt->affected_rows;
+  $stmt->close();
+  if ($result && $rowsAffected > 0) {
+    return (Array('status' => 200, 'data' => json_encode(['message' => 'Orden marcada como notificada'])));
+  } else {
+    return (Array('status' => 404, 'data' => json_encode(['message' => 'Error al marcar la orden como notificada'])));
   }
 }
 
@@ -255,11 +301,13 @@ function markOderReady($orderId, $shopId, $token) {
 
     if ($platform == 'UBER_EATS') {
       return $uberEatsController->markOderReady($orderId);
-    } else if ($platform == 'GLOBO'){
-      //TODO Petición a Globo para denegar orden
+    } else if ($platform == 'GLOVO'){
+      //TODO Petición a Glovo para denegar orden
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para denegar orden
     }
+  } else {
+    return (Array('status' => 404, 'data' => null, 'message' => 'Orden no encontrada'));
   }
 }
   
@@ -279,4 +327,22 @@ function isAuth($shopId, $token) {
   }
   $stmt->close();
   return false;
+}
+
+function getCancelledOrders($shopId, $accesToken){
+  global $conn;
+  if (!isAuth($shopId, $accesToken)) {
+    return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
+  }
+  $stmt = $conn->prepare('SELECT * FROM CancelledOrders WHERE notified = 0');
+  $stmt->execute();
+  $result = $stmt->get_result();
+
+  $data = array();
+  while ($order = $result->fetch_assoc()) {
+    $data[] = $order['orderId'];
+  }
+
+  $stmt->close();
+  return (Array('status' => 200, 'data' => $data, 'message' => 'Órdenes canceladas recibidas correctamente'));
 }

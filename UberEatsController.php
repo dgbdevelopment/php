@@ -3,32 +3,36 @@
 class UBerEatsController {
     private $token;
     private $conn;
+    private $client_id;
+    private $client_secret;
     private $statusList;
     private $typeOrderList;
 
     public function __construct($client_id, $client_secret, $conn, $statusList, $typeOrderList) {
-        $this->token = $this->getTokenFromUberEats($client_id, $client_secret)["access_token"];
         $this->conn = $conn;
+        $this->client_id = $client_id;
+        $this->client_secret = $client_secret;
         $this->statusList = $statusList;
         $this->typeOrderList = $typeOrderList;
+        $this->token = $this->requestToken($client_id, $client_secret);
     }
 
     public function receiveRequest($body) {
-        $body = json_decode($body, true);
-        $eventType = $body["event_type"];
-        switch ($eventType){
-            case "orders.notification":
-                $orderId = $body["meta"]["resource_id"];
-                $this->performOrderNotification($orderId);
-                break;
-            case "orders.cancel":
+      $body = json_decode($body, true);
+      $eventType = $body["event_type"];
+      switch ($eventType){
+          case "orders.notification":
               $orderId = $body["meta"]["resource_id"];
-              $this->cancelOrderOnDB($orderId);
+              $this->performOrderNotification($orderId);
               break;
-            default:
-              file_put_contents('NotCatchedRequests.json', date("d/m/Y-H:i:s") . " -> " . $body, FILE_APPEND);
-              break;
-        }
+          case "orders.cancel":
+            $orderId = $body["meta"]["resource_id"];
+            $this->cancelOrderOnDB($orderId);
+            break;
+          default:
+            file_put_contents('NotCatchedRequests.json', date("d/m/Y-H:i:s") . " -> " . $body, FILE_APPEND);
+            break;
+      }
     }
 
     public function getToken(){
@@ -41,22 +45,24 @@ class UBerEatsController {
         curl_setopt($curl, CURLOPT_URL, $url);
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
         $headers = [
-            'Authorization: Bearer ' . $this->token
+            'Authorization: Bearer ' . $this->getToken()
         ];
         curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
         $response = curl_exec($curl);
         $http_status = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        if ($response !== false && $http_status === 200) {
+        if($http_status == 401) $this->renewToken();
+        else if ($response !== false && $http_status === 200) {
             $response = json_decode($response);
             $this->buildPlatformOrder($response->order);
             $this->buildPlatformOrderItem($response->order);
+        } else {
+            file_put_contents('ErrorFromUberEats_log.json', date("d/m/Y-H:i:s") . " -> " . json_encode($response), FILE_APPEND);
         }
         curl_close($curl);
     }
 
     private function buildPlatformOrder($order) {
         file_put_contents('LastOrderFromUberEats_log.json', json_encode($order));
-
         $id = $order->id;
         $name = $order->display_id;
         $date = strtotime($order->created_time) * 1000;
@@ -176,6 +182,32 @@ class UBerEatsController {
         }
     }
 
+    private function requestToken($client_id, $client_secret){
+      $token = $this->getTokenFromDB();
+      if(isset($token)){
+        return $token;
+      } else {
+        $result = $this->getTokenFromUberEats($client_id, $client_secret); 
+        return $result;
+      }
+    }
+
+    private function getTokenFromDB(){
+      // Obtiene el tiempo actual en milisegundos
+      $currentTimestamp = round(microtime(true) * 1000);
+
+      // Consulta SQL actualizada para incluir la verificación de expirationDate
+      $query = "SELECT token FROM Tokens WHERE platform = 'UBER_EATS' AND expirationDate > $currentTimestamp";
+      $result = $this->conn->query($query);
+
+      if ($result->num_rows > 0) {
+        $row = $result->fetch_assoc();
+        return $row["token"];
+      } else {
+        return null;
+      }
+    }
+
     private function getTokenFromUberEats($client_id, $client_secret) {
         $curl = curl_init();
         // Configurar las opciones de la solicitud
@@ -197,10 +229,17 @@ class UBerEatsController {
         // Verificar si hubo algún error
         if ($response === false) {
             $error_message = curl_error($curl);
-            // Manejar el error aquí
+            return null;
         } else {
-            // Procesar la respuesta
-            return json_decode($response, true);
+          $token = json_decode($response)->access_token;
+          if (isset($token)){
+            $expirationDate = round(microtime(true) * 1000) + 2592000 * 1000;
+            $query = "INSERT INTO Tokens (platform, token, expirationDate) VALUES ('UBER_EATS', '$token', $expirationDate)
+              ON DUPLICATE KEY UPDATE token = VALUES(token), expirationDate = VALUES(expirationDate);";
+            $result = $this->conn->query($query);
+            return $token;  
+          }
+          return null;
         }
 
         // Cerrar la sesión cURL
@@ -228,8 +267,10 @@ class UBerEatsController {
       $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
       curl_close($ch);
 
+      if($httpStatusCode == 401) $this->renewToken();
+
       // Mostrar la respuesta del servidor
-      if($httpStatusCode == 404) {
+      else if($httpStatusCode == 404) {
         $status = 2;
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
@@ -239,7 +280,7 @@ class UBerEatsController {
         return Array('status' => 404, 'data' => $response, 'message' => 'Orden no encontrada o expirada');
       }
       //TODO cambiar el estado de la orden aceptada
-      if ($httpStatusCode == 200) {
+      else if ($httpStatusCode == 200) {
         $status = 3;
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
@@ -280,8 +321,10 @@ class UBerEatsController {
       $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
       curl_close($ch);
 
+      if($httpStatusCode == 401) $this->renewToken();
+
       // Mostrar la respuesta del servidor
-      if($httpStatusCode == 404 || $httpStatusCode == 400) {
+      else if($httpStatusCode == 404 || $httpStatusCode == 400) {
         $status = 2;
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
@@ -331,8 +374,10 @@ class UBerEatsController {
       $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
       curl_close($ch);
 
+      if($httpStatusCode == 401) $this->renewToken();
+
       // Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
-      if($httpStatusCode == 404 || $httpStatusCode == 400) {
+      else if($httpStatusCode == 404 || $httpStatusCode == 400) {
         $status = 2;
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
@@ -355,10 +400,30 @@ class UBerEatsController {
 
     private function cancelOrderOnDB($orderId){
       $status = 5;
-      $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
-      $stmt->bind_param('is', $status, $orderId);
-      $stmt->execute();
-      $stmt->close();
+      // Iniciar la transacción
+      $this->conn->begin_transaction();
+      try {
+        // Preparar la sentencia para actualizar la tabla PlatformOrder
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+
+        // Preparar la sentencia para insertar en la tabla CancelledOrders
+        $stmt = $this->conn->prepare('INSERT INTO CancelledOrders (orderId, deliveryPlatform, notified) VALUES (?, ?, ?)');
+        $deliveryPlatform = 'UBER_EATS'; 
+        $notified = 0; 
+        $stmt->bind_param('ssi', $orderId, $deliveryPlatform, $notified);
+        $stmt->execute();
+        $stmt->close();
+
+        // Confirmar la transacción
+        $this->conn->commit();
+      } catch (Exception $e) {
+        // Revertir la transacción en caso de error
+        $this->conn->rollback();
+        throw $e;
+      }
     }
 
     public function markOderReady($orderId){
@@ -383,15 +448,16 @@ class UBerEatsController {
       $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
       curl_close($ch);
 
+      if($httpStatusCode == 401) $this->renewToken();
       //Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
-      if($httpStatusCode == 404 || $httpStatusCode == 400) {
+      else if($httpStatusCode == 404 || $httpStatusCode == 400) {
         $status = 2;
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();
         $stmt->close();
 
-        return (Array('status' => $httpStatusCode, 'data' => $response, 'message' => 'Orden no encontrada o expirada'));
+        return (Array('status' => 418, 'data' => $response, 'message' => 'Orden no encontrada o expirada'));
       }
       //TODO cambiar el estado de la orden a READY
       else if ($httpStatusCode == 200) {
@@ -405,13 +471,21 @@ class UBerEatsController {
       return (Array('status' => 500, 'data' => null, 'message' => 'Error al marcar la orden como preparada'));
     }
 
+    private function renewToken(){
+      $stmt = $this->conn->prepare('DELETE FROM Tokens WHERE platform = ?');
+      $platform = 'UBER_EATS';
+      $stmt->bind_param('s', $platform);
+      $stmt->execute();
+      $stmt->close();
+      $this->token = $this->getTokenFromUberEats($this->client_id, $this->client_secret);
+    }
+
     private function generateUUID() {
       $data = random_bytes(16);
       $data[6] = chr(ord($data[6]) & 0x0f | 0x40); // Versión 4
       $data[8] = chr(ord($data[8]) & 0x3f | 0x80); // Variante RFC 4122
   
       return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
-    }
-
+    }    
 }
 ?>
