@@ -107,6 +107,16 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
   echo $response['data'];
   http_response_code($response['status']);
 
+} else if ($request_method === 'POST' && strstr($relative_path,  '/api/orders/orderDispatched')) {
+  $pathParts = explode('/', trim($relative_path, '/'));
+  $orderId = end($pathParts);
+  $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
+  $shopId = isset($queryParams['shop_id']) ? $queryParams['shop_id'] : null;
+  $whoPickup = isset($queryParams['who_pickup']) ? $queryParams['who_pickup'] : null;
+  $response = markOderDispatched($orderId, $shopId, $accessToken);
+  echo $response['data'];
+  http_response_code($response['status']);
+
 } else if ($request_method === 'GET' && $relative_path === '/api/glovo/dispatched') {
   $headers = getallheaders();
   if ($headers["Authorization"] != $glovoApiKey){
@@ -180,7 +190,7 @@ function getOrderItemsByOrderId($orderId) {
   $data = array();
   while ($item = $result->fetch_assoc()) {
       if ($item['isMenu'] == 1) {
-        $item['menuItems'] = getMenuItemsForItem($item['id']);
+        $data = array_merge($data, getMenuItemsForItem($item['id']));
       }
       $item['complements'] = getComplementsForItem($item['id']);
       $data[] = $item;
@@ -227,7 +237,8 @@ function acceptOrder($orderId, $shopId, $accesToken) {
       return $uberEatsController->acceptOrder($orderId);      
 
     } else if ($platform == 'GLOVO'){
-      //TODO Petición a Glovo para aceptar orden
+      global $glovoController;
+      return $glovoController->acceptOrder($orderId, $data['storePlatformId']);
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para aceptar orden
     }
@@ -255,7 +266,7 @@ function denyOrder($orderId, $shopId, $token) {
     if ($platform == 'UBER_EATS') {
       return $uberEatsController->denyOrder($orderId);
     } else if ($platform == 'GLOVO'){
-      //TODO Petición a Glovo para denegar orden
+      return Array('status' => 400, 'data' => json_encode(['message' => 'GLOVO no acepta denegaciones de órdenes. Debes llamar al cliente']),  'message' => 'Orden NO denegada. Llamar al cliente');
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para denegar orden
     }
@@ -280,8 +291,9 @@ function cancelOrder($orderId, $shopId, $token) {
 
     if ($platform == 'UBER_EATS') {
       return $uberEatsController->cancelOrder($orderId);
+
     } else if ($platform == 'GLOVO'){
-      //TODO Petición a Glovo para denegar orden
+      return Array('status' => 400, 'data' => json_encode(['message' => 'GLOVO no acepta cancelaciones de órdenes. Debes llamar al cliente']),  'message' => 'Orden NO cancelada. Llamar al cliente');
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para denegar orden
     }
@@ -306,7 +318,7 @@ function markCancelledAsNotified($orderId, $shopId, $accessToken){
 }
 
 function markOderReady($orderId, $shopId, $token) {
-  global $conn, $uberEatsController;
+  global $conn;
   if (!isAuth($shopId, $token)) {
     return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
   }
@@ -322,9 +334,11 @@ function markOderReady($orderId, $shopId, $token) {
     $platform = $data['deliveryPlatform'];
 
     if ($platform == 'UBER_EATS') {
+      global $uberEatsController;
       return $uberEatsController->markOderReady($orderId);
     } else if ($platform == 'GLOVO'){
-      //TODO Petición a Glovo para denegar orden
+      global $glovoController;
+      return $glovoController->readyForPickUp($orderId, $data['storePlatformId']);
     } else if ($platform == 'JUST_EAT'){
       //TODO Petición a Just-eat para denegar orden
     }
@@ -332,7 +346,39 @@ function markOderReady($orderId, $shopId, $token) {
     return (Array('status' => 404, 'data' => null, 'message' => 'Orden no encontrada'));
   }
 }
-  
+
+function markOderDispatched($orderId, $shopId, $token) {
+  global $conn, $typeOrderList;
+  if (!isAuth($shopId, $token)) {
+    return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
+  }
+  $stmt = $conn->prepare('SELECT * FROM PlatformOrder WHERE id = ?');
+  $stmt->bind_param('s', $orderId);
+  $stmt->execute();
+  $result = $stmt->get_result();
+  $stmt->close();
+
+  // Verificar si se obtuvieron resultados
+  if ($result->num_rows > 0) {
+    $data = $result->fetch_assoc();
+    $platform = $data['deliveryPlatform'];
+
+    if ($platform == 'UBER_EATS') {
+      //TODO Petición a Uber-eats para marcar orden como despachada
+    } else if ($platform == 'GLOVO'){
+      global $glovoController;
+      $whoPickUp = null;
+      if ($data['typeOrder'] == $typeOrderList['PICKED_UP_BY_CUSTOMER']) $whoPickUp = 'customer';
+      else if ($data['typeOrder'] == $typeOrderList['DELIVERY_BY_GLOVO']) $whoPickUp = 'courier';
+      return $glovoController->markOrderDispatched($orderId, $data['storePlatformId'], $whoPickUp);
+    } else if ($platform == 'JUST_EAT'){
+      //TODO Petición a Just-eat para denegar orden
+    }
+  } else {
+    return (Array('status' => 404, 'data' => null, 'message' => 'Orden no encontrada'));
+  }
+}
+
 function isAuth($shopId, $token) {
   global $conn;
   $stmt = $conn->prepare('SELECT * FROM Config WHERE shopId = ?');

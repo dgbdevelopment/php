@@ -271,7 +271,7 @@ class UBerEatsController {
 
       // Mostrar la respuesta del servidor
       else if($httpStatusCode == 404) {
-        $status = 2;
+        $status = $this->statusList['EXPIRED'];
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();
@@ -281,7 +281,7 @@ class UBerEatsController {
       }
       //TODO cambiar el estado de la orden aceptada
       else if ($httpStatusCode == 200) {
-        $status = 3;
+        $status = $this->statusList['ACCEPTED'];
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();
@@ -325,7 +325,7 @@ class UBerEatsController {
 
       // Mostrar la respuesta del servidor
       else if($httpStatusCode == 404 || $httpStatusCode == 400) {
-        $status = 2;
+        $status = $this->statusList['EXPIRED'];
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();
@@ -335,7 +335,7 @@ class UBerEatsController {
       }
       //TODO cambiar el estado de la orden denegada
       else if ($httpStatusCode == 200) {
-        $status = 4;
+        $status = $this->statusList['DENNIED'];
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();
@@ -378,7 +378,7 @@ class UBerEatsController {
 
       // Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
       else if($httpStatusCode == 404 || $httpStatusCode == 400) {
-        $status = 2;
+        $status = $this->statusList['EXPIRED'];
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();
@@ -388,7 +388,7 @@ class UBerEatsController {
       }
       //Cambiar el estado de la orden cancelada
       else if ($httpStatusCode == 200) {
-        $status = 5;
+        $status = $this->statusList['CANCELLED'];
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();
@@ -399,7 +399,7 @@ class UBerEatsController {
     }
 
     private function cancelOrderOnDB($orderId){
-      $status = 5;
+      $status = $this->statusList['CANCELLED'];
       // Iniciar la transacción
       $this->conn->begin_transaction();
       try {
@@ -451,7 +451,7 @@ class UBerEatsController {
       if($httpStatusCode == 401) $this->renewToken();
       //Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
       else if($httpStatusCode == 404 || $httpStatusCode == 400) {
-        $status = 2;
+        $status = $this->statusList['EXPIRED'];
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();
@@ -461,7 +461,7 @@ class UBerEatsController {
       }
       //TODO cambiar el estado de la orden a READY
       else if ($httpStatusCode == 200) {
-        $status = 6;
+        $status = $this->statusList['READY'];
         $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
         $stmt->bind_param('is', $status, $orderId);
         $stmt->execute();

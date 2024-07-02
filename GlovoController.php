@@ -47,23 +47,6 @@ class GlovoController {
         $discountCodes = ''; // Agrega esta línea si es necesario para el parámetro $discountCodes
         $numCommensals = 0; // Agrega esta línea si es necesario para el parámetro $numCommensals
 
-        // file_put_contents('GlovoVariables.txt',
-        //     'id: ' . $id . PHP_EOL . 
-        //     'name:  ' . $name . PHP_EOL . 
-        //     'date: ' . $date . PHP_EOL . 
-        //     'status:  ' . $status . PHP_EOL .
-        //     'paid:  ' . $paid . PHP_EOL .
-        //     'discount: ' . $discount . PHP_EOL .
-        //     'clientId: ' . $clientId . PHP_EOL .
-        //     'clientName: '. $clientName . PHP_EOL .
-        //     'clientPhone: '. $clientPhone . PHP_EOL .
-        //     'address: '. $address . PHP_EOL .
-        //     'storePlatformId: ' . $storePlatformId . PHP_EOL .
-        //     'deliveryPlatform: ' . $deliveryPlatform . PHP_EOL .
-        //     'typeOrder: ' . $typeOrder . PHP_EOL .
-        //     'observations: ' . $observations . PHP_EOL
-        // );
-
         $query = "INSERT INTO PlatformOrder (id, name, date, status, paid, discount, numCommensals, clientId, clientName, clientPhone, storePlatformId, observations, address, discountCodes, typeOrder, deliveryPlatform) 
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
@@ -211,23 +194,11 @@ class GlovoController {
       $stmt->close();
     }
 
-    // public function cancelOrder($order) {
-    //   $order = json_decode($order);
-    //   $id = $order->order_id;
-    //   $query = "UPDATE PlatformOrder SET status = ? WHERE id = ?";
-    //   $stmt = $this->conn->prepare($query);
-    //   $stmt->bind_param('is', $this->statusList['CANCELLED'], $id);
-    //   if ($stmt->execute()) {
-    //     file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Order " . $id . " updated successfully." . PHP_EOL, FILE_APPEND);
-    //   } else {
-    //     file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Error updating order: " . $stmt->error . PHP_EOL, FILE_APPEND);
-    //   }
-    //   $stmt->close();    
-    // }
-
+    // You will receive a POST request notification every time an order is cancelled.
+    // This notification will be sent only if the order has previously been dispatched to the store.
     public function cancelOrder($order){
       $orderId = json_decode($order)->order_id;
-      $status = 5;
+      $status = $this->statusList['CANCELLED'];
       // Iniciar la transacción
       $this->conn->begin_transaction();
       try {
@@ -253,6 +224,161 @@ class GlovoController {
         throw $e;
       }
     }
+
+    // The order has been accepted by the store. Be aware that if you don't accept the order we will still move forward with the order, as we don't require an acceptance to proceed.
+    public function acceptOrder($orderId, $storeId){
+      global $glovoBaseURL;
+      $url = $glovoBaseURL . '/api/v0/integrations/orders/' . $orderId . '/accept';
+      $now = new DateTime('now', new DateTimeZone('Europe/Madrid'));
+      // Añadir 30 minutos
+      $now->add(new DateInterval('PT30M'));
+      $formattedDate = $now->format('Y-m-d\TH:i:s\Z');
+
+      // Inicializar cURL
+      $ch = curl_init($url);
+
+      // Establecer opciones para la solicitud cURL
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  // Devolver el resultado en lugar de imprimirlo
+      curl_setopt($ch, CURLOPT_POST, true);  
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+          'Content-Type: application/json',
+          'Glovo-Store-Address-External-Id: ' . $storeId,
+          'Authorization: ' . $this->getToken()  
+      ));
+
+      curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(array(
+        "committedPreparationTime" => $formattedDate
+      )));
+
+      $response = curl_exec($ch);
+
+      if (curl_errno($ch)) {
+          return (Array('status' => 500, 'data' => null, 'message' => 'Error:' . curl_error($ch)));
+      }
+
+      $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      curl_close($ch);
+
+      // Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
+      if ($httpStatusCode == 404 || $httpStatusCode == 400) {
+        $status = $this->statusList['EXPIRED'];
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+
+        return (Array('status' => 418, 'data' => $response, 'message' => 'Orden no encontrada o expirada'));
+      }
+      //Cambiar el estado de la orden aceptada
+      else if ($httpStatusCode == 202 || $httpStatusCode == 204) {
+        $status = $this->statusList['ACCEPTED'];
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+        return (Array('status' => 200, 'data' => json_encode(array('message' => 'Orden aceptada correctamente')), 'message' => 'Orden aceptada correctamente'));
+      }
+      return (Array('status' => 500, 'data' => null, 'message' => 'Error al aceptar la orden'));
+    }
+
+    // The order is ready to be picked up by a courier or the customer (Only available for orders delivered by Glovo couriers)
+    public function readyForPickUp($orderId, $storeId){
+      global $glovoBaseURL;
+      $url = $glovoBaseURL . '/api/v0/integrations/orders/' . $orderId . '/ready_for_pickup';
+      // Inicializar cURL
+      $ch = curl_init($url);
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  // Devolver el resultado en lugar de imprimirlo
+      curl_setopt($ch, CURLOPT_POST, true);  
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+          'Content-Type: application/json',
+          'Glovo-Store-Address-External-Id: ' . $storeId,
+          'Authorization: ' . $this->getToken()  
+      ));
+
+      $response = curl_exec($ch);
+
+      if (curl_errno($ch)) {
+          return (Array('status' => 500, 'data' => null, 'message' => 'Error:' . curl_error($ch)));
+      }
+
+      $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      curl_close($ch);
+
+      // Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
+      if ($httpStatusCode == 400) {
+        $status = $this->statusList['EXPIRED'];
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+
+        return (Array('status' => 418, 'data' => $response, 'message' => 'Orden no encontrada o expirada'));
+      }
+      //Cambiar el estado de la orden marcada como lista para recoger
+      else if ($httpStatusCode == 204) {
+        $status = $this->statusList['READY'];
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+        return (Array('status' => 200, 'data' => json_encode(array('message' => 'Orden marcada como lista para recoger correctamente')), 'message' => 'Orden marcada como lista para recoger correctamente'));
+      }
+      return (Array('status' => 500, 'data' => null, 'message' => 'Error al aceptar la orden'));
+    }
+
+    public function markOrderDispatched($orderId, $storeId, $whoPickUp){
+      global $glovoBaseURL;
+      $url = $glovoBaseURL . '/api/v0/integrations/orders/' . $orderId;
+      if ($whoPickUp == 'courier') {
+        // The courier has collected the order in the store and is now being delivered to the customer (Only available for Marketplace orders)
+        $url = $url . '/out_for_delivery';
+      } else if ($whoPickUp == 'customer') {
+        // The order has been picked up by the customer (Only available for orders to be picked up by the customer).
+        $url = $url . '/customer_picked_up';
+      } else {
+        return (Array('status' => 400, 'data' => json_encode(Array('message' => 'Parámetro "whoPickUp" inválido')), 'message' => 'Parámetro "whoPickUp" inválido'));
+      }
+      // Inicializar cURL
+      $ch = curl_init($url);
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  // Devolver el resultado en lugar de imprimirlo
+      curl_setopt($ch, CURLOPT_POST, true);  
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+          'Content-Type: application/json',
+          'Glovo-Store-Address-External-Id: ' . $storeId,
+          'Authorization: ' . $this->getToken()  
+      ));
+
+      $response = curl_exec($ch);
+
+      if (curl_errno($ch)) {
+          return (Array('status' => 500, 'data' => null, 'message' => 'Error:' . curl_error($ch)));
+      }
+
+      $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      curl_close($ch);
+
+      // Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
+      if ($httpStatusCode == 400) {
+        $status = $this->statusList['EXPIRED'];
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+
+        return (Array('status' => 418, 'data' => $response, 'message' => 'Orden no encontrada o expirada'));
+      }
+      //Cambiar el estado de la orden marcada como despachada
+      else if ($httpStatusCode == 204) {
+        $status = $this->statusList['DISPATCHED'];
+        $stmt = $this->conn->prepare('UPDATE PlatformOrder SET status = ? WHERE id = ?');
+        $stmt->bind_param('is', $status, $orderId);
+        $stmt->execute();
+        $stmt->close();
+        return (Array('status' => 200, 'data' => json_encode(array('message' => 'Orden marcada como despachada correctamente')), 'message' => 'Orden marcada como despachada correctamente'));
+      }
+      return (Array('status' => 500, 'data' => null, 'message' => 'Error al aceptar la orden'));
+    }
+
 
     private function generateUUID() {
       $data = random_bytes(16);

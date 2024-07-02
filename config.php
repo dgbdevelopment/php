@@ -5,6 +5,13 @@
 
   $glovoApiKey = "fakeToken";
 
+  //Test Server  
+  $glovoBaseURL = "https://stageapi.glovoapp.com"; 
+  //Production Server
+  //$glovoBaseURL = "https://api.glovoapp.com"; 
+
+
+
   $servername = "127.0.0.1";
   $username = "deliverybeta";
   $password = "3_Mrzx62";
@@ -42,7 +49,8 @@
     "ACCEPTED" => 3,
     "DENNIED" => 4,
     "CANCELLED" => 5,
-    "READY" => 6
+    "READY" => 6,
+    "DISPATCHED" => 7
   ];
 
   $typeOrderList = [
