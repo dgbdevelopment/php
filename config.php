@@ -3,7 +3,7 @@
   $client_secret = "7BwCs4ruxKLVWrjBTVk2MjJkNhH6pZ7JTKMBB5bu";
   $client_id = "TCpq5rbC6xjfK2Xf1Xm1Gfy0Brek5xbz";
 
-  $glovoApiKey = "fakeToken";
+  $glovoApiKey = "bbb892a3-cd2e-4b96-80f1-68bdc38d29c6";
 
   //Test Server  
   $glovoBaseURL = "https://stageapi.glovoapp.com"; 

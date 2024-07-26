@@ -62,3 +62,11 @@ El parámetro **`:orderId`** es necesario
 El valor **`SHOP_ID`** es necesario
 El valor **`SHOP_ACCESS_TOKEN`** es necesario
 
+## Obtener el menu de una tienda en una plataforma determinada
+Method **GET**
+https://betadelivery.turbopos.es/api/retrieveMenu/:deliveryPlatform/:shopId?access_token=SHOP_ACCESS_TOKEN
+El parámetro **`:deliveryPlatform`** es necesario
+  Valores permitidos: uber_eats | glovo
+El parámetro **`:shopId`** es necesario
+El valor **`SHOP_ACCESS_TOKEN`** es necesario
+

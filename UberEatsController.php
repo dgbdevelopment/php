@@ -173,6 +173,11 @@ class UBerEatsController {
             // Ejecutar la consulta
             if ($stmt->execute()) {
               file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Registro en PlaftormOrderItem insertado correctamente." . PHP_EOL, FILE_APPEND);
+              if (isset($item->selected_modifier_groups)){
+                foreach($item->selected_modifier_groups as $complements){
+                  $this->buildPlatformComplement($order, $itemForStorage->id, $complements);
+                }
+              }
             } else {
               file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Error al insertar el registro en PlaftormOrderItem: " . $stmt->error . PHP_EOL, FILE_APPEND);
             }
@@ -219,7 +224,7 @@ class UBerEatsController {
                 'client_id' => $client_id,
                 'client_secret' => $client_secret,
                 'grant_type' => 'client_credentials',
-                'scope' => 'eats.order'
+                'scope' => 'eats.order eats.store'
             )
         ));
 
@@ -486,6 +491,107 @@ class UBerEatsController {
       $data[8] = chr(ord($data[8]) & 0x3f | 0x80); // Variante RFC 4122
   
       return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
-    }    
+    }     
+    
+    private function buildPlatformComplement($order, $itemForStorageId, $complements){
+      foreach ($complements->selected_items as $complement) {
+        $complementToStorage = new stdClass();
+        $complementToStorage->id = $this->generateUUID();
+        $complementToStorage->platformOrderItemId = $itemForStorageId;
+        $complementToStorage->platformComplementId = $complement->id;
+        $complementToStorage->complementName = $complement->title;
+        $complementToStorage->quantity = $complement->quantity->amount;
+        $complementToStorage->price = $this->getPrice($order, $complement->cart_item_id) /100000;
+        $complementToStorage->total = $complementToStorage->price * $complementToStorage->quantity;
+        $complementToStorage->date = time() * 1000;
+        //No viene comment
+        //No viene vat
+        $sql = "INSERT INTO PlatformComplement (
+          id, platformOrderItemId, platformComplementId, complementName, quantity, price, total, date
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?
+        )";
+
+        // Preparar la declaración
+        $stmt = $this->conn->prepare($sql);
+
+        // Vincular los parámetros
+        $stmt->bind_param(
+          'ssssiddi',
+          $complementToStorage->id,
+          $complementToStorage->platformOrderItemId,
+          $complementToStorage->platformComplementId,
+          $complementToStorage->complementName,
+          $complementToStorage->quantity,
+          $complementToStorage->price,
+          $complementToStorage->total,
+          $complementToStorage->date
+        );
+
+            // Ejecutar la consulta
+        if ($stmt->execute()) {
+          file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Registro en PlaftormComplement insertado correctamente." . PHP_EOL, FILE_APPEND);
+        } else {
+          file_put_contents('db_log.txt', date("d/m/Y-H:i:s") . " -> Error al insertar el registro en PlaftormComplement: " . $stmt->error . PHP_EOL, FILE_APPEND);
+        }
+    }
+
+      // Cerrar la declaración
+      $stmt->close();
+    }
+
+    private function getPrice($order, $cartItemId){
+      foreach ($order->payment->payment_detail->item_charges->price_breakdown as $item) {
+        if($item->cart_item_id == $cartItemId) return $item->unit->gross->amount_e5;
+      }
+      return 0;
+    }
+
+    public function retrieveMenu($shopId){
+      $uberStoreId = $this->getUberStoreId($shopId);
+      $url = 'https://api.uber.com/v2/eats/stores/' . $uberStoreId . '/menus';
+      // Inicializar cURL
+      $ch = curl_init($url);
+
+      // Establecer opciones para la solicitud cURL
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  // Devolver el resultado en lugar de imprimirlo
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+          'Content-Type: application/json',
+          'Authorization: Bearer ' . $this->getToken()  // Agregar el token de acceso 
+      ));
+
+      $response = curl_exec($ch);
+
+      if (curl_errno($ch)) {
+          return (Array('status' => 500, 'data' => null, 'message' => 'Error:' . curl_error($ch)));
+      }
+
+      $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      curl_close($ch);
+
+      if($httpStatusCode == 401) $this->renewToken();
+      //Si la orden no se encuentra es que está expirada (no se aceptó en el tiempo establecido). Cambiamos su status a EXPIRED (2)
+      else if($httpStatusCode == 404 || $httpStatusCode == 400) {
+        return (Array('status' => 418, 'data' => $response, 'message' => 'Error al obtener menú'));
+      }
+      //TODO cambiar el estado de la orden a READY
+      else if ($httpStatusCode == 200) {
+        return (Array('status' => 200, 'data' => json_decode($response), 'message' => 'Orden marcada como preparada correctamente'));
+      }
+      return (Array('status' => 500, 'data' => $response, 'message' => 'Error al marcar la orden como preparada'));
+    } 
+    
+    private function getUberStoreId($shopId){
+      $stmt = $this->conn->prepare('SELECT uberStoreId FROM Config WHERE shopId = ?');
+      $stmt->bind_param('s', $shopId);
+      $stmt->execute();
+      $result = $stmt->get_result();
+      $row = $result->fetch_assoc();
+      $stmt->close();
+      if ($row){
+        return $row['uberStoreId'];
+      } else {
+        return null;
+      }
+    }
 }
-?>

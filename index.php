@@ -1,9 +1,9 @@
 
 <?php
 //Ruta original: https://betadelivery.turbopos.es/api/uber_eats
-// ini_set('display_errors', '1');
-// ini_set('display_startup_errors', '1');
-// error_reporting(E_ALL);
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+error_reporting(E_ALL);
 
 require_once "./config.php";
 require_once "./UberEatsController.php";
@@ -51,6 +51,15 @@ if ($request_method === 'POST' && $relative_path == '/api/uber_eats') {
   $shopId = end($pathParts);
   $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
   $response = getOrdersByShopId($shopId, $accessToken);
+  echo json_encode($response['data']);
+  http_response_code($response['status']);
+
+} else if ($request_method === 'GET' && strstr($relative_path,  '/api/retrieveMenu')) {
+  $pathParts = explode('/', trim($relative_path, '/'));
+  $shopId = end($pathParts);
+  $deliveryPlatform = prev($pathParts);
+  $accessToken = isset($queryParams['access_token']) ? $queryParams['access_token'] : null;
+  $response = retrieveMenu($shopId, $accessToken, $deliveryPlatform);
   echo json_encode($response['data']);
   http_response_code($response['status']);
 
@@ -397,9 +406,9 @@ function isAuth($shopId, $token) {
   return false;
 }
 
-function getCancelledOrders($shopId, $accesToken){
+function getCancelledOrders($shopId, $accessToken){
   global $conn;
-  if (!isAuth($shopId, $accesToken)) {
+  if (!isAuth($shopId, $accessToken)) {
     return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
   }
   $stmt = $conn->prepare('SELECT * FROM CancelledOrders WHERE notified = 0');
@@ -428,4 +437,22 @@ function getComplementsForItem($itemId){
   }
   $stmt->close();
   return sizeof($data) > 0 ? $data : null;
+}
+
+function retrieveMenu($shopId, $accessToken, $platform){
+  if (!isAuth($shopId, $accessToken)) {
+    return (Array('status' => 401, 'data' => null, 'message' => 'Token no válido'));
+  }
+  global $uberEatsController, $glovoController;
+  switch ($platform) {
+    case 'uber_eats':
+      return $uberEatsController->retrieveMenu($shopId);
+      break;
+    case 'glovo':
+      return $glovoController->retrieveMenu();
+      break;    
+    default:
+      return (Array('status' => 400, 'data' => ['message' => "La plataforma $platform no está disponible."]));
+      break;
+  }
 }

@@ -387,6 +387,10 @@ class GlovoController {
   
       return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
+
+    public function retrieveMenu(){
+      return (Array('status' => 405, 'data' => ['message' => "No disponemos aún de menú para la plataforma glovo."]));
+    }
     
 }
 ?>
